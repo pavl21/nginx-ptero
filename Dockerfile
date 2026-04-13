@@ -41,9 +41,7 @@ RUN apk --no-cache add \
         "${PHP_PKG}-session" \
         "${PHP_PKG}-iconv" \
         "${PHP_PKG}-phar" \
-    # Einheitliche Symlinks – start.sh ruft immer php-fpm8 und php auf
-    # Alpine-Binary: /usr/sbin/php-fpm84 (nicht php84-fpm!)
-    && ln -sf "/usr/sbin/php-fpm$(echo ${PHP_PKG} | sed 's/php//')" /usr/sbin/php-fpm8 \
+    # php-Symlink
     && ln -sf "/usr/bin/${PHP_PKG}" /usr/bin/php \
     # Composer global installieren
     && curl -sS https://getcomposer.org/installer \
@@ -51,5 +49,26 @@ RUN apk --no-cache add \
     && composer --version \
     # Verzeichnisse vorbereiten
     && mkdir -p /home/container /run/nginx /var/log/nginx /var/lib/nginx/tmp
+
+# php-fpm8 als Wrapper-Script:
+#   - Ruft den echten php-fpmXX auf
+#   - Fügt automatisch user=root/group=root ein, falls im www.conf vergessen
+RUN PHP_NUM="$(echo ${PHP_PKG} | sed 's/php//')" \
+    && echo '#!/bin/sh'                                                                         > /usr/sbin/php-fpm8 \
+    && echo 'C="" p=""'                                                                        >> /usr/sbin/php-fpm8 \
+    && echo 'for a in "$@"; do'                                                                >> /usr/sbin/php-fpm8 \
+    && echo '  [ "$p" = "--fpm-config" ] && C="$a"'                                           >> /usr/sbin/php-fpm8 \
+    && echo '  p="$a"'                                                                         >> /usr/sbin/php-fpm8 \
+    && echo 'done'                                                                             >> /usr/sbin/php-fpm8 \
+    && echo 'if [ -f "$C" ]; then'                                                             >> /usr/sbin/php-fpm8 \
+    && echo '  INC=$(awk '"'"'/^include/{print $NF}'"'"' "$C")'                               >> /usr/sbin/php-fpm8 \
+    && echo '  for f in $INC; do'                                                              >> /usr/sbin/php-fpm8 \
+    && echo '    [ -f "$f" ] || continue'                                                      >> /usr/sbin/php-fpm8 \
+    && echo '    grep -q "^user" "$f" 2>/dev/null && continue'                                >> /usr/sbin/php-fpm8 \
+    && echo '    awk '"'"'/^\[www\]/{print;print "user  = root";print "group = root";next}{print}'"'"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"' >> /usr/sbin/php-fpm8 \
+    && echo '  done'                                                                           >> /usr/sbin/php-fpm8 \
+    && echo 'fi'                                                                               >> /usr/sbin/php-fpm8 \
+    && printf 'exec /usr/sbin/php-fpm%s -R "$@"\n' "${PHP_NUM}"                               >> /usr/sbin/php-fpm8 \
+    && chmod +x /usr/sbin/php-fpm8
 
 WORKDIR /home/container

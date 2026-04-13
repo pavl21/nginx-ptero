@@ -42,13 +42,14 @@ RUN apk --no-cache add \
         "${PHP_PKG}-iconv" \
         "${PHP_PKG}-phar" \
     # Einheitliche Symlinks – start.sh ruft immer php-fpm8 und php auf
-    && ln -sf "/usr/sbin/${PHP_PKG}-fpm" /usr/sbin/php-fpm8 \
+    # Alpine-Binary: /usr/sbin/php-fpm84 (nicht php84-fpm!)
+    && ln -sf "/usr/sbin/php-fpm$(echo ${PHP_PKG} | sed 's/php//')" /usr/sbin/php-fpm8 \
     && ln -sf "/usr/bin/${PHP_PKG}" /usr/bin/php \
     # Composer global installieren
     && curl -sS https://getcomposer.org/installer \
         | php -- --install-dir=/usr/local/bin --filename=composer \
     && composer --version \
-    # Arbeitsverzeichnis vorbereiten
-    && mkdir -p /home/container
+    # Verzeichnisse vorbereiten
+    && mkdir -p /home/container /run/nginx /var/log/nginx /var/lib/nginx/tmp
 
 WORKDIR /home/container

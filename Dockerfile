@@ -17,6 +17,7 @@ LABEL org.opencontainers.image.description="PVQ Panel – Nginx + PHP-FPM ${PHP_
 LABEL org.opencontainers.image.licenses="MIT"
 
 RUN apk --no-cache add \
+        bash \
         nginx \
         curl \
         unzip \

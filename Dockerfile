@@ -77,7 +77,27 @@ WORKDIR /home/container
 # Pterodactyl-Standard-Entrypoint:
 # Wings setzt $STARTUP als Env-Variable (mit {{VAR}}-Syntax).
 # Dieses Script löst die Variablen auf und startet den Server.
-RUN printf '#!/bin/bash\ncd /home/container\nINTERNAL_IP=$(ip route get 1 | awk '"'"'{print $(NF-2);exit}'"'"')\nexport INTERNAL_IP\nMODIFIED_STARTUP=$(echo -e ${STARTUP} | sed -e '"'"'s/{{/${/g'"'"' -e '"'"'s/}}/}/g'"'"')\necho ":/home/container$ ${MODIFIED_STARTUP}"\neval ${MODIFIED_STARTUP}\n' > /entrypoint.sh \
+RUN printf '#!/bin/bash\n\
+cd /home/container\n\
+INTERNAL_IP=$(ip route get 1 | awk '"'"'{print $(NF-2);exit}'"'"')\n\
+export INTERNAL_IP\n\
+MODIFIED_STARTUP=$(echo -e ${STARTUP} | sed -e '"'"'s/{{/${/g'"'"' -e '"'"'s/}}/}/g'"'"')\n\
+echo ":/home/container$ ${MODIFIED_STARTUP}"\n\
+\n\
+eval ${MODIFIED_STARTUP} &\n\
+SERVER_PID=$!\n\
+\n\
+# Leitet SIGTERM/SIGINT direkt an den Server-Prozess weiter\n\
+trap "kill -TERM $SERVER_PID 2>/dev/null" SIGTERM SIGINT\n\
+\n\
+# Liest stdin: Wings sendet ^C (\\x03) als Stop-Signal\n\
+( while IFS= read -r -d '"'"''"'"' -n1 char 2>/dev/null; do\n\
+    printf '"'"'%%s'"'"' "$char" | grep -qP '"'"'\\x03'"'"' && kill -TERM $SERVER_PID 2>/dev/null && break\n\
+  done ) &\n\
+READER_PID=$!\n\
+\n\
+wait $SERVER_PID\n\
+kill $READER_PID 2>/dev/null\n' > /entrypoint.sh \
     && chmod +x /entrypoint.sh
 
 CMD ["/entrypoint.sh"]

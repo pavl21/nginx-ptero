@@ -40,6 +40,7 @@ RUN apk --no-cache add \
         "${PHP_PKG}-ctype" \
         "${PHP_PKG}-session" \
         "${PHP_PKG}-iconv" \
+        "${PHP_PKG}-phar" \
     # Einheitliche Symlinks – start.sh ruft immer php-fpm8 und php auf
     && ln -sf "/usr/sbin/${PHP_PKG}-fpm" /usr/sbin/php-fpm8 \
     && ln -sf "/usr/bin/${PHP_PKG}" /usr/bin/php \

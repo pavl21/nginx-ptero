@@ -73,3 +73,11 @@ RUN PHP_NUM="$(echo ${PHP_PKG} | sed 's/php//')" \
     && chmod +x /usr/sbin/php-fpm8
 
 WORKDIR /home/container
+
+# Pterodactyl-Standard-Entrypoint:
+# Wings setzt $STARTUP als Env-Variable (mit {{VAR}}-Syntax).
+# Dieses Script löst die Variablen auf und startet den Server.
+RUN printf '#!/bin/bash\ncd /home/container\nINTERNAL_IP=$(ip route get 1 | awk '"'"'{print $(NF-2);exit}'"'"')\nexport INTERNAL_IP\nMODIFIED_STARTUP=$(echo -e ${STARTUP} | sed -e '"'"'s/{{/${/g'"'"' -e '"'"'s/}}/}/g'"'"')\necho ":/home/container$ ${MODIFIED_STARTUP}"\neval ${MODIFIED_STARTUP}\n' > /entrypoint.sh \
+    && chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]

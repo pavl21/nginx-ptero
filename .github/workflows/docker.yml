@@ -1,6 +1,11 @@
 # /.github/workflows/docker.yml
-# Baut ghcr.io/pavl21/nginx-ptero für PHP 8.1, 8.2, 8.3, 8.4
-# Trigger: Push auf main ODER manuell über "Run workflow"
+# Baut ghcr.io/pavl21/nginx-ptero für PHP 8.2, 8.3, 8.4, 8.5
+# Alle Tags nutzen Dockerfile auf Basis der offiziellen
+# php:${PHP_VER}-fpm-alpine Images (Minor-Tag schwimmend).
+# PHP 8.1 wird nicht mehr gebaut (kein Sicherheitssupport mehr seit 31.12.2025);
+# das bestehende Tag 8.1 auf ghcr.io bleibt unverändert stehen.
+# Trigger: Push auf main, wöchentlich (Patch-Updates der Basis-Images)
+# oder manuell über "Run workflow"
 
 name: Build & Push Docker Images
 
@@ -12,6 +17,10 @@ on:
       - 'Dockerfile'
       - '.github/workflows/docker.yml'
   workflow_dispatch:
+  schedule:
+    # Wöchentlich Montag 04:00 UTC: holt Patch-Versionen der offiziellen
+    # PHP-Basis-Images (z. B. Sicherheitsfixes) automatisch nach.
+    - cron: '0 4 * * 1'
 
 env:
   REGISTRY: ghcr.io
@@ -29,23 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - php_ver: "8.1"
-            php_pkg: "php81"
-            alpine:  "3.18"
-            tag:     "8.1"
-          - php_ver: "8.2"
-            php_pkg: "php82"
-            alpine:  "3.19"
-            tag:     "8.2"
-          - php_ver: "8.3"
-            php_pkg: "php83"
-            alpine:  "3.20"
-            tag:     "8.3"
-          - php_ver: "8.4"
-            php_pkg: "php84"
-            alpine:  "3.21"
-            tag:     "8.4"
+        php_ver: ["8.2", "8.3", "8.4", "8.5"]
 
     steps:
       - name: Repository auschecken
@@ -67,18 +60,18 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ matrix.tag }}
+            type=raw,value=${{ matrix.php_ver }}
 
       - name: Image bauen und pushen
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: Dockerfile
+          pull: true
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            ALPINE_VERSION=${{ matrix.alpine }}
-            PHP_PKG=${{ matrix.php_pkg }}
             PHP_VER=${{ matrix.php_ver }}
           cache-from: type=gha,scope=php-${{ matrix.php_ver }}
           cache-to:   type=gha,scope=php-${{ matrix.php_ver }},mode=max

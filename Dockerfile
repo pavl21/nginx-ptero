@@ -25,11 +25,33 @@ LABEL org.opencontainers.image.licenses="MIT"
 # Deshalb hier wieder auf SIGTERM zurücksetzen, wie beim bisherigen Image.
 STOPSIGNAL SIGTERM
 
+# nginx kommt NICHT aus dem Alpine-Repo, sondern aus dem offiziellen
+# nginx.org-Stable-Repo: Alpine 3.24 (edge) liefert nur 1.30.4, das noch 6
+# mittelschwere CVEs offen hat (u. a. CVE-2026-15176, -93479, -95101, -97629,
+# -97205, -90439). Gefixt ist das erst ab 1.30.6, nginx.org hat das Paket
+# bereits in 1.30.6-r1. Signierschlüssel wird gegen einen fest eingetragenen
+# SHA-256 geprüft (ermittelt am 2026-10-21 aus https://nginx.org/keys/nginx_signing.rsa.pub),
+# Build bricht bei Abweichung ab. Repo-Zeile wird als @nginx-getaggtes Repo
+# eingetragen (nicht als normales Repo), damit ausschließlich "nginx@nginx"
+# von dort kommt und kein anderes Paket aus dem nginx.org-Repo gezogen wird.
+RUN set -eux; \
+    curl -fsSL https://nginx.org/keys/nginx_signing.rsa.pub -o /etc/apk/keys/nginx_signing.rsa.pub; \
+    echo "ff7cf138acc09f2a5029300ab713fe6a1440605fca72e2bab76a4da9206fec87  /etc/apk/keys/nginx_signing.rsa.pub" | sha256sum -c -; \
+    ALPINE_VER="v$(cut -d. -f1,2 /etc/alpine-release)"; \
+    echo "@nginx https://nginx.org/packages/alpine/${ALPINE_VER}/main" >> /etc/apk/repositories; \
+    # apk update statt --no-cache: --no-cache würde den Index für das
+    # @nginx-getaggte Repo nie dauerhaft ablegen. Spätere apk-Aufrufe in
+    # dieser Schicht (z. B. "apk del .build-deps") müssen aber die Zugehörigkeit
+    # des "nginx@nginx"-World-Eintrags zu seinem Tag erneut auflösen können,
+    # ohne Cache bricht das mit "repository tag ... does not exist" ab. Der
+    # Cache wird weiter unten manuell wieder entfernt.
+    apk update
+
 # Laufzeit-Pakete (bleiben im Image) + Build-Abhängigkeiten (virtuelles Paket,
 # wird nach dem Extension-Build wieder entfernt).
-RUN apk add --no-cache \
+RUN apk add \
         bash \
-        nginx \
+        nginx@nginx \
         curl \
         unzip \
         git \
@@ -39,7 +61,7 @@ RUN apk add --no-cache \
         libwebp \
         libzip \
         icu-libs \
-    && apk add --no-cache --virtual .build-deps \
+    && apk add --virtual .build-deps \
         freetype-dev \
         libjpeg-turbo-dev \
         libpng-dev \
@@ -61,7 +83,20 @@ RUN apk add --no-cache \
         | php -- --install-dir=/usr/local/bin --filename=composer \
     && composer --version \
     # Verzeichnisse vorbereiten
-    && mkdir -p /home/container /run/nginx /var/log/nginx /var/lib/nginx/tmp
+    && mkdir -p /home/container /run/nginx /var/log/nginx /var/lib/nginx/tmp \
+    # Das nginx.org-Paket kompiliert (anders als das bisherige Alpine-Paket)
+    # feste absolute Default-Pfade für Error-Log und Cache-Temp-Dirs ein
+    # (--error-log-path=/var/log/nginx/error.log, Temp-Pfade unter
+    # /var/cache/nginx/*). Die eigentliche egg-Config überschreibt diese Pfade
+    # zwar auf /home/container/..., aber nginx öffnet das Error-Log schon vor
+    # dem Parsen der Config einmal auf dem Default-Pfad, als Server-Container
+    # (UID 988, kein root) sonst "Permission denied"-Alert beim Start, anders
+    # als beim alten Alpine-Paket (dessen Default-Pfade relativ sind und damit
+    # durch "-p /home/container/" überschrieben wurden). Deshalb hier gezielt
+    # nur diese zwei Verzeichnisse für alle beschreibbar machen.
+    && chmod 777 /var/log/nginx /var/cache/nginx \
+    # apk-Cache erst jetzt entfernen (siehe Kommentar bei "apk update" oben)
+    && rm -rf /var/cache/apk/*
 
 # php-fpm8 als Wrapper-Script (wie bisher):
 #   - Ruft den echten php-fpm der offiziellen Basis auf (/usr/local/sbin/php-fpm)
